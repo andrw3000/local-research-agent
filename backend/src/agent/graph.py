@@ -23,7 +23,7 @@ from agent.prompts import (
     reflection_instructions,
     answer_instructions,
 )
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -61,11 +61,10 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
     # init LLM
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatOllama(
         model=configurable.query_generator_model,
         temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        base_url=os.getenv("OLLAMA_URL"),
     )
     structured_llm = llm.with_structured_output(SearchQueryList)
 
@@ -163,11 +162,10 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
     # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatOllama(
         model=reasoning_model,
         temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        base_url=os.getenv("OLLAMA_URL"),
     )
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
 
@@ -242,11 +240,10 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     )
 
     # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatOllama(
         model=answer_model,
-        temperature=0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        temperature=0.0,
+        base_url=os.getenv("OLLAMA_URL"),
     )
     result = llm.invoke(formatted_prompt)
 
@@ -290,4 +287,4 @@ builder.add_conditional_edges(
 # Finalize the answer
 builder.add_edge("finalize_answer", END)
 
-graph = builder.compile(name="pro-search-agent")
+graph = builder.compile(name="local-research-agent")

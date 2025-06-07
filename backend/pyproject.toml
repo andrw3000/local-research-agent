@@ -17,13 +17,17 @@ dependencies = [
     "langgraph-api",
     "fastapi",
     "google-genai",
+    "langchain-ollama (>=0.3.3,<0.4.0)",
 ]
 
 [tool.poetry]
-package-mode = false
+packages = [
+    { include = "agent", from = "src" },
+]
 
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
+ipykernel = "^6.29.5"
 
 [project.optional-dependencies]
 dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
