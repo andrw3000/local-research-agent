@@ -36,9 +36,6 @@ load_dotenv()
 if os.getenv("OLLAMA_URL") is None:
     raise ValueError("The `OLLAMA_URL` environment variable is not set")
 
-# Used for Google Search API
-genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
-
 
 # Nodes
 def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
@@ -111,14 +108,15 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     )
 
     # Uses the google genai client as the langchain client doesn't return grounding metadata
-    response = genai_client.models.generate_content(
-        model=configurable.query_generator_model,
+    response = Client(api_key="").models.generate_content(
+        model="gemini-2.0-flash",
         contents=formatted_prompt,
         config={
             "tools": [{"google_search": {}}],
             "temperature": 0,
         },
     )
+
     # resolve the urls to short urls for saving tokens and time
     resolved_urls = resolve_urls(
         response.candidates[0].grounding_metadata.grounding_chunks, state["id"]
