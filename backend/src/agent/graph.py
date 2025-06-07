@@ -3,10 +3,12 @@ import os
 from agent.tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_ollama import ChatOllama
 from langgraph.types import Send
 from langgraph.graph import StateGraph
 from langgraph.graph import START, END
-from langchain_core.runnables import RunnableConfig
+
 from google.genai import Client
 
 from agent.state import (
@@ -23,7 +25,7 @@ from agent.prompts import (
     reflection_instructions,
     answer_instructions,
 )
-from langchain_ollama import ChatOllama
+from agent.search import web_searcher
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -107,8 +109,19 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         research_topic=state["search_query"],
     )
 
+    # Custom web search using DuckDuckGo and crawl4ai
+    response = web_searcher(
+        research_topic=state["search_query"],
+        model_name=configurable.web_search_model,
+        temperature=0.0,
+        max_results=5,
+        max_context_length=5000,
+    )
+
     # Uses the google genai client as the langchain client doesn't return grounding metadata
-    response = Client(api_key="").models.generate_content(
+    response_google = Client(
+        api_key=""
+    ).models.generate_content(
         model="gemini-2.0-flash",
         contents=formatted_prompt,
         config={
@@ -116,6 +129,15 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
             "temperature": 0,
         },
     )
+
+    from devtools import pprint
+
+    # Print the response from the custom web search
+    print("Custom Web Search Response:")
+    pprint(response)
+    # Print the response from Google Search API
+    print("Google Search API Response:")
+    pprint(response_google)
 
     # resolve the urls to short urls for saving tokens and time
     resolved_urls = resolve_urls(

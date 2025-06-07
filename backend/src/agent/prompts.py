@@ -34,7 +34,7 @@ Topic: What revenue grew more last year apple stock or the number of people buyi
 Context: {research_topic}"""
 
 
-web_searcher_instructions = """Conduct targeted Google Searches to gather the most recent, credible information on "{research_topic}" and synthesize it into a verifiable text artifact.
+web_searcher_instructions = """Conduct targeted Web Searches to gather the most recent, credible information on "{research_topic}" and synthesize it into a verifiable text artifact.
 
 Instructions:
 - Query should ensure that the most current information is gathered. The current date is {current_date}.

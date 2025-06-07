@@ -18,6 +18,9 @@ dependencies = [
     "fastapi",
     "google-genai",
     "langchain-ollama (>=0.3.3,<0.4.0)",
+    "crawl4ai (>=0.6.3,<0.7.0)",
+    "langchain-community (>=0.3.24,<0.4.0)",
+    "duckduckgo-search (>=8.0.2,<9.0.0)",
 ]
 
 [tool.poetry]
