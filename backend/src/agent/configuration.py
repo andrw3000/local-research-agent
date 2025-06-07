@@ -8,22 +8,25 @@ from langchain_core.runnables import RunnableConfig
 class Configuration(BaseModel):
     """The configuration for the agent."""
 
+    # LLM with output structure and function calling
     query_generator_model: str = Field(
-        default="gemini-2.0-flash",
+        default="mistral-small3.1",  # gemini-2.0-flash
         metadata={
             "description": "The name of the language model to use for the agent's query generation."
         },
     )
 
-    reflection_model: str = Field(
-        default="gemini-2.5-flash-preview-04-17",
+    # Reasoning model with output structure
+    reasoning_model: str = Field(
+        default="deepseek-r1:70b",  # gemini-2.5-flash-preview-04-17
         metadata={
             "description": "The name of the language model to use for the agent's reflection."
         },
     )
 
+    # Summarization model
     answer_model: str = Field(
-        default="gemini-2.5-pro-preview-05-06",
+        default="gemma3",
         metadata={
             "description": "The name of the language model to use for the agent's answer."
         },

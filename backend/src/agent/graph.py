@@ -60,7 +60,7 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
+    # init LLM
     llm = ChatGoogleGenerativeAI(
         model=configurable.query_generator_model,
         temperature=1.0,
@@ -231,7 +231,7 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     configurable = Configuration.from_runnable_config(config)
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
+    answer_model = state.get("answer_model") or configurable.answer_model
 
     # Format the prompt
     current_date = get_current_date()
@@ -243,7 +243,7 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
 
     # init Reasoning Model, default to Gemini 2.5 Flash
     llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
+        model=answer_model,
         temperature=0,
         max_retries=2,
         api_key=os.getenv("GEMINI_API_KEY"),
