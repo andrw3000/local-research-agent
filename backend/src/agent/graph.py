@@ -1,6 +1,9 @@
 import os
+import time
 
 from agent.tools_and_schemas import SearchQueryList, Reflection
+from agent.search import web_searcher
+from langchain_community.tools import DuckDuckGoSearchResults
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -25,7 +28,6 @@ from agent.prompts import (
     reflection_instructions,
     answer_instructions,
 )
-from agent.search import web_searcher
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -91,16 +93,20 @@ def continue_to_web_research(state: QueryGenerationState):
 
 
 def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
-    """LangGraph node that performs web research using the native Google Search API tool.
+    """LangGraph node that performs web research using DuckDuckGo or Google Search API.
 
-    Executes a web search using the native Google Search API tool in combination with Gemini 2.0 Flash.
+    This function:
+    1. Performs web search using DuckDuckGo
+    2. Processes search results and extracts useful content
+    3. Creates citations with proper formatting
+    4. Returns the results with citations in a standardized format
 
     Args:
-        state: Current graph state containing the search query and research loop count
-        config: Configuration for the runnable, including search API settings
+        state: Current graph state containing the search query
+        config: Configuration for the runnable
 
     Returns:
-        Dictionary with state update, including sources_gathered, research_loop_count, and web_research_results
+        Dictionary with state update, including sources_gathered and web_research_result
     """
     # Configure
     configurable = Configuration.from_runnable_config(config)
@@ -110,14 +116,20 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     )
 
     # Custom web search using DuckDuckGo and crawl4ai
-    response = web_searcher(
-        research_topic=state["search_query"],
-        model_name=configurable.web_search_model,
-        temperature=0.0,
-        max_results=5,
-        max_context_length=5000,
-    )
+    try:
+        response = web_searcher(
+            research_topic=state["search_query"],
+            model_name=configurable.web_search_model,
+            temperature=0.0,
+            max_results=5,
+            max_context_length=5000,
+        )
+    except Exception as e:
+        print(f"Error during web search: {e}")
+        # Provide a default response if web search fails
+        response = f"Could not retrieve current information about '{state['search_query']}' due to search API limitations."
 
+<<<<<<< HEAD
     # Uses the google genai client as the langchain client doesn't return grounding metadata
     response_google = Client(
         api_key=""
@@ -129,24 +141,121 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
             "temperature": 0,
         },
     )
+=======
+    # Extract text from response if it's an AIMessage
+    if isinstance(response, AIMessage):
+        response_text = response.content
+    else:
+        response_text = str(response)
+>>>>>>> 2fcc76f (Adding basic client search substitute)
 
-    from devtools import pprint
+    citations = []
 
-    # Print the response from the custom web search
-    print("Custom Web Search Response:")
-    pprint(response)
-    # Print the response from Google Search API
-    print("Google Search API Response:")
-    pprint(response_google)
+    try:
+        # Get DuckDuckGo search results for citations with retries
+        tool = DuckDuckGoSearchResults()
+        results = []
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-    # resolve the urls to short urls for saving tokens and time
-    resolved_urls = resolve_urls(
-        response.candidates[0].grounding_metadata.grounding_chunks, state["id"]
-    )
-    # Gets the citations and adds them to the generated text
-    citations = get_citations(response, resolved_urls)
-    modified_text = insert_citation_markers(response.text, citations)
-    sources_gathered = [item for citation in citations for item in citation["segments"]]
+        for attempt in range(max_retries):
+            try:
+                results = tool.run(state["search_query"])
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:  # Last attempt
+                    print(
+                        f"Failed to get search results after {max_retries} attempts: {e}"
+                    )
+                    # Continue with empty results
+                    break
+                else:
+                    print(
+                        f"Attempt {attempt + 1} failed, retrying in {retry_delay} seconds: {e}"
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+
+        # Process search results - handle both string and list results
+        if isinstance(results, str):
+            import json
+
+            try:
+                # Try to parse as JSON if it's a string
+                search_results = json.loads(results)
+            except json.JSONDecodeError:
+                # If not JSON, split into lines and extract URLs
+                lines = results.split("\n")
+                search_results = []
+                for line in lines:
+                    if "http" in line:
+                        search_results.append(
+                            {
+                                "title": line.split(" http")[0].strip(),
+                                "href": "http" + line.split(" http")[1].strip(),
+                            }
+                        )
+        else:
+            search_results = results
+
+        # Create citations from search results
+        for idx, result in enumerate(search_results[:5]):  # Limit to top 5 results
+            try:
+                # Try to get title and URL - handle different result formats
+                if isinstance(result, dict):
+                    title = (
+                        result.get("title", "").split(" - ")[0]
+                        if " - " in result.get("title", "")
+                        else result.get("title", "No Title")
+                    )
+                    url = result.get("href", result.get("link", "No URL"))
+                elif isinstance(result, str):
+                    # Handle case where result is a single string (URL or title)
+                    title = (
+                        result.split("http")[0].strip() if "http" in result else result
+                    )
+                    url = (
+                        "http" + result.split("http")[1].strip()
+                        if "http" in result
+                        else "No URL"
+                    )
+                else:
+                    continue  # Skip if result format is unknown
+
+                citation = {
+                    "start_index": len(response_text),  # Add citations at the end
+                    "end_index": len(response_text),
+                    "segments": [
+                        {"label": title, "short_url": f"[{idx + 1}]", "value": url}
+                    ],
+                }
+                citations.append(citation)
+            except Exception as e:
+                print(f"Error processing search result {idx}: {e}")
+                continue
+
+    except Exception as e:
+        print(f"Error processing search results: {e}")
+        # Add a placeholder citation if citation processing fails
+        citations = [
+            {
+                "start_index": len(response_text),
+                "end_index": len(response_text),
+                "segments": [
+                    {
+                        "label": "Search Error",
+                        "short_url": "[!]",
+                        "value": "Search results unavailable",
+                    }
+                ],
+            }
+        ]
+
+    # Add citation markers using the existing utils function
+    modified_text = insert_citation_markers(response_text, citations)
+
+    # Extract sources gathered in same format as before
+    sources_gathered = [citation["segments"][0] for citation in citations]
 
     return {
         "sources_gathered": sources_gathered,
