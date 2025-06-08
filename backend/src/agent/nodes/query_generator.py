@@ -30,7 +30,7 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
 
     # init LLM
     llm = ChatOllama(
-        model=configurable.query_generator_model,
+        model=state.get("ollama_llm") or configurable.query_generator_model,
         temperature=1.0,
         base_url=os.getenv("OLLAMA_URL"),
     )

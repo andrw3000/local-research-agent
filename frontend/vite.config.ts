@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
@@ -11,6 +12,11 @@ export default defineConfig({
     alias: {
       "@": path.resolve(new URL(".", import.meta.url).pathname, "./src"),
     },
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    globals: true,
   },
   server: {
     proxy: {

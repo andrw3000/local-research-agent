@@ -22,7 +22,7 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     configurable = Configuration.from_runnable_config(config)
-    answer_model = state.get("answer_model") or configurable.answer_model
+    answer_model = state.get("ollama_llm") or configurable.answer_model
 
     # Format the prompt
     current_date = get_current_date()

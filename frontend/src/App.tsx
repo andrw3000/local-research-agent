@@ -1,9 +1,44 @@
-import { useStream } from "@langchain/langgraph-sdk/react";
-import type { Message } from "@langchain/langgraph-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ProcessedEvent } from "@/components/ActivityTimeline";
-import { WelcomeScreen } from "@/components/WelcomeScreen";
-import { ChatMessagesView } from "@/components/ChatMessagesView";
+import { ProcessedEvent } from "./components/ActivityTimeline";
+import { WelcomeScreen } from "./components/WelcomeScreen";
+import { ChatMessagesView } from "./components/ChatMessagesView";
+
+// Convert [REF]source[/REF] to markdown links with both anchor and URL references
+const convertReferencesToMarkdown = (text: string): string => {
+  const references = new Map<string, number>();
+
+  return text.replace(
+    /\[REF\](.*?)(?:\|(.*?))?\[\/REF\]/g,
+    (_, source, url) => {
+      // Get or create reference number
+      let refNumber = references.get(source);
+      if (refNumber === undefined) {
+        refNumber = references.size + 1;
+        references.set(source, refNumber);
+      }
+
+      // Create a URL-friendly version of the source for the anchor
+      const anchor = source.toLowerCase().replace(/\s+/g, "-");
+      const urlPart = url
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">[${refNumber}]</a>`
+        : "";
+
+      return `[${source}](#${anchor})${urlPart}`;
+    }
+  );
+};
+
+interface ChatMessage {
+  role: "user" | "ai";
+  content: string;
+  id?: string;
+}
+
+interface Message {
+  type: "human" | "ai";
+  content: string;
+  id: string;
+}
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -12,67 +47,15 @@ export default function App() {
   const [historicalActivities, setHistoricalActivities] = useState<
     Record<string, ProcessedEvent[]>
   >({});
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const hasFinalizeEventOccurredRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const thread = useStream<{
-    messages: Message[];
-    initial_search_query_count: number;
-    max_research_loops: number;
-    reasoning_model: string;
-  }>({
-    apiUrl: import.meta.env.DEV
-      ? "http://localhost:2024"
-      : "http://localhost:8123",
-    assistantId: "agent",
-    messagesKey: "messages",
-    onFinish: (event: any) => {
-      console.log(event);
-    },
-    onUpdateEvent: (event: any) => {
-      let processedEvent: ProcessedEvent | null = null;
-      if (event.generate_query) {
-        processedEvent = {
-          title: "Generating Search Queries",
-          data: event.generate_query.query_list.join(", "),
-        };
-      } else if (event.web_research) {
-        const sources = event.web_research.sources_gathered || [];
-        const numSources = sources.length;
-        const uniqueLabels = [
-          ...new Set(sources.map((s: any) => s.label).filter(Boolean)),
-        ];
-        const exampleLabels = uniqueLabels.slice(0, 3).join(", ");
-        processedEvent = {
-          title: "Web Research",
-          data: `Gathered ${numSources} sources. Related to: ${
-            exampleLabels || "N/A"
-          }.`,
-        };
-      } else if (event.reflection) {
-        processedEvent = {
-          title: "Reflection",
-          data: event.reflection.is_sufficient
-            ? "Search successful, generating final answer."
-            : `Need more information, searching for ${event.reflection.follow_up_queries.join(
-                ", "
-              )}`,
-        };
-      } else if (event.finalize_answer) {
-        processedEvent = {
-          title: "Finalizing Answer",
-          data: "Composing and presenting the final answer.",
-        };
-        hasFinalizeEventOccurredRef.current = true;
-      }
-      if (processedEvent) {
-        setProcessedEventsTimeline((prevEvents) => [
-          ...prevEvents,
-          processedEvent!,
-        ]);
-      }
-    },
-  });
+  const apiUrl = import.meta.env.DEV
+    ? "http://localhost:2024"
+    : "http://localhost:8123";
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -83,15 +66,15 @@ export default function App() {
         scrollViewport.scrollTop = scrollViewport.scrollHeight;
       }
     }
-  }, [thread.messages]);
+  }, [messages]);
 
   useEffect(() => {
     if (
       hasFinalizeEventOccurredRef.current &&
-      !thread.isLoading &&
-      thread.messages.length > 0
+      !isLoading &&
+      messages.length > 0
     ) {
-      const lastMessage = thread.messages[thread.messages.length - 1];
+      const lastMessage = messages[messages.length - 1];
       if (lastMessage && lastMessage.type === "ai" && lastMessage.id) {
         setHistoricalActivities((prev) => ({
           ...prev,
@@ -99,29 +82,23 @@ export default function App() {
         }));
       }
       hasFinalizeEventOccurredRef.current = false;
+      setProcessedEventsTimeline([]);
     }
-  }, [thread.messages, thread.isLoading, processedEventsTimeline]);
+  }, [messages, isLoading, processedEventsTimeline]);
 
   const handleSubmit = useCallback(
-    (submittedInputValue: string, effort: string, model: string) => {
+    async (submittedInputValue: string, effort: string, model: string) => {
       if (!submittedInputValue.trim()) return;
       setProcessedEventsTimeline([]);
       hasFinalizeEventOccurredRef.current = false;
+      setIsLoading(true);
 
-      // convert effort to, initial_search_query_count and max_research_loops
-      // low means max 1 loop and 1 query
-      // medium means max 3 loops and 3 queries
-      // high means max 10 loops and 5 queries
-      let initial_search_query_count = 0;
-      let max_research_loops = 0;
+      let initial_search_query_count = 3;
+      let max_research_loops = 3;
       switch (effort) {
         case "low":
           initial_search_query_count = 1;
           max_research_loops = 1;
-          break;
-        case "medium":
-          initial_search_query_count = 3;
-          max_research_loops = 3;
           break;
         case "high":
           initial_search_query_count = 5;
@@ -129,47 +106,158 @@ export default function App() {
           break;
       }
 
-      const newMessages: Message[] = [
-        ...(thread.messages || []),
-        {
-          type: "human",
-          content: submittedInputValue,
-          id: Date.now().toString(),
-        },
-      ];
-      thread.submit({
-        messages: newMessages,
-        initial_search_query_count: initial_search_query_count,
-        max_research_loops: max_research_loops,
-        reasoning_model: model,
-      });
+      // Add new message to UI immediately
+      const newMessage: Message = {
+        type: "human",
+        content: submittedInputValue,
+        id: Date.now().toString(),
+      };
+      const updatedMessages = [...messages, newMessage];
+      setMessages(updatedMessages);
+
+      // Convert messages to backend format
+      const backendMessages: ChatMessage[] = updatedMessages.map((msg) => ({
+        role: msg.type === "human" ? "user" : "ai",
+        content:
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content),
+        id: msg.id,
+      }));
+
+      try {
+        abortControllerRef.current = new AbortController();
+
+        const response = await fetch(`${apiUrl}/app/agent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: backendMessages,
+            initial_search_query_count,
+            max_research_loops,
+            ollama_llm: model,
+          }),
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response body");
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+
+          // Process all complete lines
+          for (let i = 0; i < lines.length - 1; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.data?.messages) {
+                  // Handle final messages update
+                  const newMessages = data.data.messages.map(
+                    (msg: ChatMessage) => ({
+                      type: msg.role === "user" ? "human" : "ai",
+                      content:
+                        msg.role === "ai"
+                          ? convertReferencesToMarkdown(msg.content)
+                          : msg.content,
+                      id: msg.id || Date.now().toString(),
+                    })
+                  );
+                  setMessages(newMessages);
+                  hasFinalizeEventOccurredRef.current = true;
+                } else if (data.generate_query || data.research) {
+                  // Handle progress events
+                  const event = data.generate_query || data.research;
+                  setProcessedEventsTimeline((prev) => [
+                    ...prev,
+                    {
+                      title: data.generate_query
+                        ? "Generating Search Queries"
+                        : "Research Progress",
+                      data: event.status,
+                    },
+                  ]);
+                } else if (data.error) {
+                  // Handle error events
+                  setProcessedEventsTimeline((prev) => [
+                    ...prev,
+                    {
+                      title: "Error",
+                      data: data.error.status,
+                    },
+                  ]);
+                }
+              } catch (e) {
+                console.error("Error parsing SSE data:", e);
+              }
+            }
+          }
+          // Keep the last incomplete line in the buffer
+          buffer = lines[lines.length - 1];
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        if (error.name === "AbortError") {
+          console.log("Request was cancelled");
+        } else {
+          setProcessedEventsTimeline((prev) => [
+            ...prev,
+            {
+              title: "Error",
+              data: error.message,
+            },
+          ]);
+        }
+      } finally {
+        setIsLoading(false);
+      }
     },
-    [thread]
+    [messages]
   );
 
   const handleCancel = useCallback(() => {
-    thread.stop();
-    window.location.reload();
-  }, [thread]);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+  }, []);
 
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
       <main className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full">
         <div
           className={`flex-1 overflow-y-auto ${
-            thread.messages.length === 0 ? "flex" : ""
+            messages.length === 0 ? "flex" : ""
           }`}
         >
-          {thread.messages.length === 0 ? (
+          {messages.length === 0 ? (
             <WelcomeScreen
               handleSubmit={handleSubmit}
-              isLoading={thread.isLoading}
+              isLoading={isLoading}
               onCancel={handleCancel}
             />
           ) : (
             <ChatMessagesView
-              messages={thread.messages}
-              isLoading={thread.isLoading}
+              messages={messages}
+              isLoading={isLoading}
               scrollAreaRef={scrollAreaRef}
               onSubmit={handleSubmit}
               onCancel={handleCancel}

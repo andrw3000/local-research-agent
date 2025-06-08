@@ -36,7 +36,7 @@ export const InputForm: React.FC<InputFormProps> = ({
 }) => {
   const [internalInputValue, setInternalInputValue] = useState("");
   const [effort, setEffort] = useState("medium");
-  const [model, setModel] = useState("deepseek-r1:32b");
+  const [model, setModel] = useState("mistral-small3.1");
 
   const handleInternalSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -170,7 +170,7 @@ export const InputForm: React.FC<InputFormProps> = ({
                 >
                   <div className="flex items-center">
                     <LightbulbIcon className="h-4 w-4 mr-2 text-blue-400" />{" "}
-                    DeepSeek-R1
+                    DeepSeek R1
                   </div>
                 </SelectItem>
                 <SelectItem

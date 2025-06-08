@@ -180,11 +180,13 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         research_topic=state["search_query"],
     )
 
+    web_search_model = state.get("ollama_llm") or configurable.web_search_model
+
     # Custom web search using DuckDuckGo and crawl4ai
     try:
         response = web_searcher(
             research_topic=state["search_query"],
-            model_name=configurable.web_search_model,
+            model_name=web_search_model,
             temperature=0.0,
             max_results=5,
             max_context_length=5000,
