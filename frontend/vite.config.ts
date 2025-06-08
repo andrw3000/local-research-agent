@@ -19,6 +19,7 @@ export default defineConfig({
     globals: true,
   },
   server: {
+    port: 5173,
     proxy: {
       // Proxy API requests to the backend server
       "/api": {

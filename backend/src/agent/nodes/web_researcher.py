@@ -18,7 +18,7 @@ from agent.configuration import Configuration
 from agent.prompts import get_current_date, web_searcher_instructions
 from agent.utils import insert_citation_markers
 
-# Enable nested event loops - needed for Jupyter/IPython environments
+# Enable nested event loops
 nest_asyncio.apply()
 
 
@@ -95,17 +95,21 @@ def web_searcher(
             markdown_paths = []
 
             async def crawl_urls(urls, tmpdir):
-                run_config = CrawlerRunConfig(format="markdown")
+                run_config = CrawlerRunConfig()
+                run_config.crawl_scope = "single"  # Only crawl the main page
+                run_config.output_dir = tmpdir
                 async with AsyncWebCrawler() as crawler:
                     results = await crawler.arun_many(urls=urls, config=run_config)
                 for res in results:
-                    if res.success:
+                    if res.success and hasattr(res, "markdown"):
                         fname = Path(tmpdir) / (
                             res.url.replace("https://", "").replace("/", "_") + ".md"
                         )
-                        fname.write_text(res.markdown.raw_markdown)
+                        fname.write_text(res.markdown)
                     else:
-                        print(f"Failed: {res.url} → {res.error_message}")
+                        print(
+                            f"Failed: {res.url} → {str(res.error) if hasattr(res, 'error') else 'Unknown error'}"
+                        )
 
             # Run crawling in current event loop or create new one
             loop = ensure_event_loop()

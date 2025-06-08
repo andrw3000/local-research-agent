@@ -55,7 +55,7 @@ export default function App() {
 
   const apiUrl = import.meta.env.DEV
     ? "http://localhost:2024"
-    : "http://localhost:8123";
+    : "http://localhost:2024";
 
   useEffect(() => {
     if (scrollAreaRef.current) {
