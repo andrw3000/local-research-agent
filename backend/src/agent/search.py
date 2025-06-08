@@ -4,7 +4,7 @@ import nest_asyncio
 from langchain.schema import SystemMessage, HumanMessage
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_ollama import ChatOllama
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from pathlib import Path
 from datetime import datetime
 import time
@@ -90,23 +90,18 @@ def web_searcher(
         with tempfile.TemporaryDirectory() as tmpdir:
             markdown_paths = []
 
-            # Create crawler instance
-            crawler = AsyncWebCrawler()
-
-            async def crawl_urls():
-                tasks = []
-                for url in urls:
-                    task = crawler.crawl(
-                        url=url,
-                        output_file=str(
-                            Path(tmpdir)
-                            / (url.replace("https://", "").replace("/", "_") + ".md")
-                        ),
-                        format="markdown",
+        async def crawl_urls(urls, tmpdir):
+            run_config = CrawlerRunConfig(format="markdown")
+            async with AsyncWebCrawler() as crawler:
+                results = await crawler.arun_many(urls=urls, config=run_config)
+            for res in results:
+                if res.success:
+                    fname = Path(tmpdir) / (
+                        res.url.replace("https://", "").replace("/", "_") + ".md"
                     )
-                    tasks.append(task)
-                if tasks:  # Only gather if there are tasks
-                    await asyncio.gather(*tasks)
+                    fname.write_text(res.markdown.raw_markdown)
+                else:
+                    print(f"Failed: {res.url} → {res.error_message}")
 
             # Run crawling in current event loop or create new one
             loop = ensure_event_loop()

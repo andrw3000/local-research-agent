@@ -10,14 +10,14 @@ class Configuration(BaseModel):
 
     # LLM with output structure and function calling
     query_generator_model: str = Field(
-        default="mistral-small3.1",  # gemini-2.0-flash
+        default="qwq",  # gemini-2.0-flash
         metadata={
             "description": "The name of the language model to use for the agent's query generation."
         },
     )
 
     web_search_model: str = Field(
-        default="gemma3",  # gemini-2.0-flash
+        default="qwq",  # gemini-2.0-flash
         metadata={
             "description": "The name of the language model to use for the agent's web search."
         },
@@ -25,7 +25,7 @@ class Configuration(BaseModel):
 
     # Reasoning model with output structure
     reasoning_model: str = Field(
-        default="deepseek-r1:32b",  # gemini-2.5-flash-preview-04-17
+        default="qwq",  # gemini-2.5-flash-preview-04-17
         metadata={
             "description": "The name of the language model to use for the agent's reflection."
         },
@@ -33,7 +33,7 @@ class Configuration(BaseModel):
 
     # Summarization model
     answer_model: str = Field(
-        default="gemma3",
+        default="qwq",
         metadata={
             "description": "The name of the language model to use for the agent's answer."
         },
