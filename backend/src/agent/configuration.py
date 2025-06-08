@@ -25,7 +25,7 @@ class Configuration(BaseModel):
 
     # Reasoning model with output structure
     reasoning_model: str = Field(
-        default="deepseek-r1:70b",  # gemini-2.5-flash-preview-04-17
+        default="deepseek-r1:32b",  # gemini-2.5-flash-preview-04-17
         metadata={
             "description": "The name of the language model to use for the agent's reflection."
         },
