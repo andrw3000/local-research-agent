@@ -21,7 +21,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         Welcome.
       </h1>
       <p className="text-xl md:text-2xl text-neutral-400">
-        How can I help you today?
+        What are you researching today?
       </p>
     </div>
     <div className="w-full mt-4">
@@ -33,7 +33,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
       />
     </div>
     <p className="text-xs text-neutral-500">
-      Powered by Google Gemini and LangChain LangGraph.
+      Powered by The Uncertainty Engine.
     </p>
   </div>
 );

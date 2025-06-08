@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SquarePen, Brain, Send, StopCircle, Zap, Cpu } from "lucide-react";
+import {
+  SquarePen,
+  Brain,
+  Send,
+  StopCircle,
+  Cpu,
+  Zap,
+  Star,
+  Bolt,
+  LightbulbIcon,
+} from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -132,32 +142,44 @@ export const InputForm: React.FC<InputFormProps> = ({
               Model
             </div>
             <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="w-[150px] bg-transparent border-none cursor-pointer">
+              <SelectTrigger className="w-[200px] bg-transparent border-none cursor-pointer">
                 <SelectValue placeholder="Model" />
               </SelectTrigger>
               <SelectContent className="bg-neutral-700 border-neutral-600 text-neutral-300 cursor-pointer">
                 <SelectItem
-                  value="gemini-2.0-flash"
+                  value="qwq"
                   className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
                 >
                   <div className="flex items-center">
-                    <Zap className="h-4 w-4 mr-2 text-yellow-400" /> 2.0 Flash
+                    <Star className="h-4 w-4 mr-2 text-purple-400" /> QwQ by
+                    Qwen
                   </div>
                 </SelectItem>
                 <SelectItem
-                  value="gemini-2.5-flash-preview-04-17"
+                  value="mistral-small3.1"
                   className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
                 >
                   <div className="flex items-center">
-                    <Zap className="h-4 w-4 mr-2 text-orange-400" /> 2.5 Flash
+                    <Bolt className="h-4 w-4 mr-2 text-orange-400" /> Mistral
+                    Small 3.1
                   </div>
                 </SelectItem>
                 <SelectItem
-                  value="gemini-2.5-pro-preview-05-06"
+                  value="deepseek-r1"
                   className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
                 >
                   <div className="flex items-center">
-                    <Cpu className="h-4 w-4 mr-2 text-purple-400" /> 2.5 Pro
+                    <LightbulbIcon className="h-4 w-4 mr-2 text-blue-400" />{" "}
+                    DeepSeek-R1
+                  </div>
+                </SelectItem>
+                <SelectItem
+                  value="gemma3"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  <div className="flex items-center">
+                    <Zap className="h-4 w-4 mr-2 text-green-400" /> Gemma 3 by
+                    Google
                   </div>
                 </SelectItem>
               </SelectContent>
