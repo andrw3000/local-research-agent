@@ -129,25 +129,11 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         # Provide a default response if web search fails
         response = f"Could not retrieve current information about '{state['search_query']}' due to search API limitations."
 
-<<<<<<< HEAD
-    # Uses the google genai client as the langchain client doesn't return grounding metadata
-    response_google = Client(
-        api_key=""
-    ).models.generate_content(
-        model="gemini-2.0-flash",
-        contents=formatted_prompt,
-        config={
-            "tools": [{"google_search": {}}],
-            "temperature": 0,
-        },
-    )
-=======
     # Extract text from response if it's an AIMessage
     if isinstance(response, AIMessage):
         response_text = response.content
     else:
         response_text = str(response)
->>>>>>> 2fcc76f (Adding basic client search substitute)
 
     citations = []
 
