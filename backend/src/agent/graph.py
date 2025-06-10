@@ -36,18 +36,6 @@ builder.add_edge(START, "generate_query")
 builder.add_conditional_edges(
     "generate_query", continue_to_web_research, ["web_research"]
 )
-
-
-# Add join to aggregate parallel web research results
-class WebResearchResults(TypedDict):
-    web_research_result: list
-    sources_gathered: list
-    search_query: list
-
-
-builder.add_join("join_web_research", WebResearchResults)
-builder.add_edge("web_research", "join_web_research")
-builder.add_edge("join_web_research", "reflection")
 # Reflect on the web research
 builder.add_edge("web_research", "reflection")
 # Evaluate the research

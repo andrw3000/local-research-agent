@@ -59,23 +59,23 @@ def reflection(state: ResearchState, config: RunnableConfig) -> ResearchState:
     # For operator.add, we return a list with 1 if we need more research, empty list otherwise
     research_loop_increment = [1] if not result.is_sufficient else []
 
-    return ResearchState(
+    return {
         # Core reflection results
-        is_sufficient=result.is_sufficient,
-        knowledge_gap=result.knowledge_gap,
-        follow_up_queries=result.follow_up_queries,
-        research_loop_count=research_loop_increment,
-        number_of_ran_queries=len(state.get("search_query", [])),
+        "is_sufficient": result.is_sufficient,
+        "knowledge_gap": result.knowledge_gap,
+        "follow_up_queries": result.follow_up_queries,
+        "research_loop_count": research_loop_increment,
+        "number_of_ran_queries": len(state.get("search_query", [])),
         # Pass through existing state
-        messages=state.get("messages", []),
-        web_research_result=state.get("web_research_result", []),
-        sources_gathered=state.get("sources_gathered", []),
-        search_query=state.get("search_query", []),
+        "messages": state.get("messages", []),
+        "web_research_result": state.get("web_research_result", []),
+        "sources_gathered": state.get("sources_gathered", []),
+        "search_query": state.get("search_query", []),
         # Initialize optional fields
-        query_list=None,
-        current_query=None,
-        query_id=None,
-    )
+        "query_list": None,
+        "current_query": None,
+        "query_id": None,
+    }
 
 
 def evaluate_research(

@@ -83,18 +83,18 @@ def finalize_answer(state: ResearchState, config: RunnableConfig) -> ResearchSta
 
     logger.info(f"Answer finalized with {len(unique_sources)} unique sources")
 
-    return ResearchState(
-        messages=[AIMessage(content=result.content)],
-        sources_gathered=unique_sources,
-        research_loop_count=[],  # Empty list since answer node doesn't increment the counter
+    return {
+        "messages": [AIMessage(content=result.content)],
+        "sources_gathered": unique_sources,
+        "research_loop_count": [],  # Empty list since answer node doesn't increment the counter
         # Pass through required fields with empty/None values since this is the final state
-        search_query=[],
-        web_research_result=[],
-        is_sufficient=None,
-        knowledge_gap=None,
-        follow_up_queries=[],
-        number_of_ran_queries=None,
-        query_list=None,
-        current_query=None,
-        query_id=None,
-    )
+        "search_query": [],
+        "web_research_result": [],
+        "is_sufficient": None,
+        "knowledge_gap": None,
+        "follow_up_queries": [],
+        "number_of_ran_queries": None,
+        "query_list": None,
+        "current_query": None,
+        "query_id": None,
+    }

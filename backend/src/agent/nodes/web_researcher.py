@@ -321,20 +321,20 @@ def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
         current_results = []
 
     # Merge current state with graph state
-    return ResearchState(
+    return {
         # Research results
-        sources_gathered=current_sources + sources_gathered,
-        search_query=current_queries + [state["current_query"]],
-        web_research_result=current_results + [modified_text],
-        research_loop_count=[],  # Empty list since web_research doesn't increment the counter
+        "sources_gathered": current_sources + sources_gathered,
+        "search_query": current_queries + [state["current_query"]],
+        "web_research_result": current_results + [modified_text],
+        "research_loop_count": [],  # Empty list since web_research doesn't increment the counter
         # Preserve state
-        messages=state.get("messages", []),
+        "messages": state.get("messages", []),
         # Initialize optional fields
-        is_sufficient=None,
-        knowledge_gap=None,
-        follow_up_queries=[],
-        number_of_ran_queries=None,
-        query_list=None,
-        current_query=None,
-        query_id=None,
-    )
+        "is_sufficient": None,
+        "knowledge_gap": None,
+        "follow_up_queries": [],
+        "number_of_ran_queries": None,
+        "query_list": None,
+        "current_query": None,
+        "query_id": None,
+    }
