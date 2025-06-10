@@ -171,7 +171,7 @@ def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
 
     # Get configuration and model
     cfg = Configuration.from_runnable_config(config)
-    web_search_model = config.get("ollama_llm") or cfg.web_search_model
+    web_search_model = cfg.ollama_llm or cfg.web_search_model
     logger.debug(f"Using web search model: {web_search_model}")
 
     # Perform web search

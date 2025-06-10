@@ -28,8 +28,8 @@ def generate_query(state: ResearchState, config: RunnableConfig) -> ResearchStat
     """
     logger.info("Generating initial search queries")
 
-    configurable = Configuration.from_runnable_config(config)
-    query_model = config.get("ollama_llm") or configurable.query_generator_model
+    cfg = Configuration.from_runnable_config(config)
+    query_model = cfg.ollama_llm or cfg.query_generator_model
 
     # Get initial search query count from config
     number_of_queries = config.get("configurable", {}).get(

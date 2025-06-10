@@ -19,7 +19,7 @@ def reflection(state: ResearchState, config: RunnableConfig) -> ResearchState:
 
     # Get configuration and model
     cfg = Configuration.from_runnable_config(config)
-    reasoning_model = config.get("ollama_llm") or cfg.reasoning_model
+    reasoning_model = cfg.ollama_llm or cfg.reasoning_model
     logger.debug(f"Using reasoning model: {reasoning_model}")
 
     # Validate and log state

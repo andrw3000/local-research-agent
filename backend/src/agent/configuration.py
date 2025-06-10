@@ -8,6 +8,14 @@ from langchain_core.runnables import RunnableConfig
 class Configuration(BaseModel):
     """The configuration for the agent."""
 
+    # Global LLM override
+    ollama_llm: Optional[str] = Field(
+        default=None,
+        metadata={
+            "description": "If set, this model will be used for all LLM operations, overriding individual model settings."
+        },
+    )
+
     # LLM with output structure and function calling
     query_generator_model: str = Field(
         default="mistral-small3.1",  # gemini-2.0-flash

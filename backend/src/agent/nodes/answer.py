@@ -30,7 +30,7 @@ def finalize_answer(state: ResearchState, config: RunnableConfig) -> ResearchSta
     # Get configuration and model
     cfg = Configuration.from_runnable_config(config)
     logger.debug(f"Ollama model configuration: {cfg}")
-    answer_model = config.get("ollama_llm") or cfg.answer_model
+    answer_model = cfg.ollama_llm or cfg.answer_model
     logger.debug(f"Using answer model: {answer_model}")
 
     current_date = get_current_date()

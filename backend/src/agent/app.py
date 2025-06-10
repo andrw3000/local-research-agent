@@ -49,27 +49,18 @@ app.add_middleware(
 # Research agent endpoint using LangGraph
 @app.post("/app/agent")
 async def chat_stream(request: ChatRequest):
-    logger.info(f"Received chat request with {len(request.messages)} messages")
-    logger.debug(f"Chat request details: {request.dict()}")
+    """Research agent endpoint using LangGraph."""
+    try:
+        logger.info(f"Received chat request with {len(request.messages)} messages")
+        logger.debug(f"Chat request details: {request.dict()}")
 
-    async def event_generator():
-        # Convert ChatRequest to graph input format
-        config = {
-            "configurable": Configuration(
-                max_research_loops=request.max_research_loops,
-                number_of_initial_queries=request.initial_search_query_count,
-            ).model_dump(),
-            "ollama_llm": request.ollama_llm,  # Pass model as config context
-        }
+        # Create graph input from chat request
         graph_input = ResearchState(
-            messages=[
-                {"role": msg.role, "content": msg.content} for msg in request.messages
-            ],
-            research_loop_count=[],  # Initialize counter as empty list for operator.add
-            search_query=[],
-            web_research_result=[],
-            sources_gathered=[],
-            # Initialize optional fields
+            messages=request.messages,
+            research_loop_count=[],  # Initialize with empty list
+            search_query=[],  # Initialize with empty list
+            web_research_result=[],  # Initialize with empty list
+            sources_gathered=[],  # Initialize with empty list
             is_sufficient=None,
             knowledge_gap=None,
             follow_up_queries=[],
@@ -78,57 +69,54 @@ async def chat_stream(request: ChatRequest):
             current_query=None,
             query_id=None,
         )
+
         logger.debug(f"Prepared graph input: {graph_input}")
-
-        # Start research process
-        query_event = {
-            "generate_query": {"status": "Started generating research queries..."}
-        }
         logger.info("Starting research process")
-        yield f"data: {json.dumps(query_event)}\n\n"
+        logger.debug("Invoking research graph")
 
-        try:
-            # Run the graph
-            logger.debug("Invoking research graph")
-            state = graph.invoke(graph_input, config)
-            logger.info("Research graph execution completed")
+        # Configure graph with request parameters
+        config = Configuration(
+            number_of_initial_queries=request.initial_search_query_count,
+            max_research_loops=request.max_research_loops,
+            ollama_llm=request.ollama_llm,  # Set the global model override
+        )
 
-            # Indicate research completion
-            research_complete_event = {
-                "research": {
-                    "status": "Research completed, generating final response..."
-                }
-            }
-            yield f"data: {json.dumps(research_complete_event)}\n\n"
+        # Run graph with updated config
+        state = graph.invoke(graph_input, {"configurable": config.dict()})
+        logger.info("Research graph execution completed")
 
-            # Get the final response
-            last_message = state["messages"][-1]
-            # Handle LangChain message objects
-            content = (
-                last_message.content
-                if hasattr(last_message, "content")
-                else str(last_message)
-            )
+        # Indicate research completion
+        research_complete_event = {
+            "research": {"status": "Research completed, generating final response..."}
+        }
+        yield f"data: {json.dumps(research_complete_event)}\n\n"
 
-            # Convert messages to list format
-            msg_dicts = [
-                {"role": msg.role, "content": msg.content, "id": msg.id}
-                for msg in request.messages
-            ]
-            response_message = {
-                "role": "ai",
-                "id": f"msg_{int(time.time())}",
-                "content": content,
-            }
-            logger.info("Sending final response to client")
-            logger.debug(f"Final response message: {response_message}")
-            yield f"data: {json.dumps({'data': {'messages': [*msg_dicts, response_message]}})}\n\n"
-        except Exception as e:
-            logger.error(f"Error during request processing: {str(e)}", exc_info=True)
-            error_event = {"error": {"status": f"An error occurred: {str(e)}"}}
-            yield f"data: {json.dumps(error_event)}\n\n"
+        # Get the final response
+        last_message = state["messages"][-1]
+        # Handle LangChain message objects
+        content = (
+            last_message.content
+            if hasattr(last_message, "content")
+            else str(last_message)
+        )
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+        # Convert messages to list format
+        msg_dicts = [
+            {"role": msg.role, "content": msg.content, "id": msg.id}
+            for msg in request.messages
+        ]
+        response_message = {
+            "role": "ai",
+            "id": f"msg_{int(time.time())}",
+            "content": content,
+        }
+        logger.info("Sending final response to client")
+        logger.debug(f"Final response message: {response_message}")
+        yield f"data: {json.dumps({'data': {'messages': [*msg_dicts, response_message]}})}\n\n"
+    except Exception as e:
+        logger.error(f"Error during request processing: {str(e)}", exc_info=True)
+        error_event = {"error": {"status": f"An error occurred: {str(e)}"}}
+        yield f"data: {json.dumps(error_event)}\n\n"
 
 
 from fastapi.responses import StreamingResponse
