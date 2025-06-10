@@ -10,7 +10,7 @@ from agent.nodes import (
     evaluate_research,
     finalize_answer,
 )
-from agent.state import OverallState
+from agent.state import ResearchState
 
 
 load_dotenv()
@@ -20,7 +20,7 @@ if os.getenv("OLLAMA_URL") is None:
 
 
 # Create our Agent Graph
-builder = StateGraph(OverallState, config_schema=Configuration)
+builder = StateGraph(ResearchState, config_schema=Configuration)
 
 # Define the nodes we will cycle between
 builder.add_node("generate_query", generate_query)

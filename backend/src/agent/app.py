@@ -11,6 +11,12 @@ import fastapi.exceptions
 import asyncio
 import json
 from agent.graph import graph  # Add this import for the LangGraph agent
+from agent.configuration import Configuration  # Import Configuration for graph config
+from agent.state import ResearchState  # Import unified state type
+from agent.logging_config import setup_logging
+
+# Setup logging
+logger = setup_logging(level="DEBUG", name="agent.app")
 
 
 # Define request/response models
@@ -43,26 +49,49 @@ app.add_middleware(
 # Research agent endpoint using LangGraph
 @app.post("/app/agent")
 async def chat_stream(request: ChatRequest):
+    logger.info(f"Received chat request with {len(request.messages)} messages")
+    logger.debug(f"Chat request details: {request.dict()}")
+
     async def event_generator():
         # Convert ChatRequest to graph input format
-        graph_input = {
-            "messages": [
+        config = {
+            "configurable": Configuration(
+                max_research_loops=request.max_research_loops,
+                number_of_initial_queries=request.initial_search_query_count,
+            ).model_dump(),
+            "ollama_llm": request.ollama_llm,  # Pass model as config context
+        }
+        graph_input = ResearchState(
+            messages=[
                 {"role": msg.role, "content": msg.content} for msg in request.messages
             ],
-            "max_research_loops": request.max_research_loops,
-            "initial_search_query_count": request.initial_search_query_count,
-            "ollama_llm": request.ollama_llm,
-        }
+            research_loop_count=[],  # Initialize counter as empty list for operator.add
+            search_query=[],
+            web_research_result=[],
+            sources_gathered=[],
+            # Initialize optional fields
+            is_sufficient=None,
+            knowledge_gap=None,
+            follow_up_queries=[],
+            number_of_ran_queries=None,
+            query_list=None,
+            current_query=None,
+            query_id=None,
+        )
+        logger.debug(f"Prepared graph input: {graph_input}")
 
         # Start research process
         query_event = {
             "generate_query": {"status": "Started generating research queries..."}
         }
+        logger.info("Starting research process")
         yield f"data: {json.dumps(query_event)}\n\n"
 
         try:
             # Run the graph
-            state = graph.invoke(graph_input)
+            logger.debug("Invoking research graph")
+            state = graph.invoke(graph_input, config)
+            logger.info("Research graph execution completed")
 
             # Indicate research completion
             research_complete_event = {
@@ -91,8 +120,11 @@ async def chat_stream(request: ChatRequest):
                 "id": f"msg_{int(time.time())}",
                 "content": content,
             }
+            logger.info("Sending final response to client")
+            logger.debug(f"Final response message: {response_message}")
             yield f"data: {json.dumps({'data': {'messages': [*msg_dicts, response_message]}})}\n\n"
         except Exception as e:
+            logger.error(f"Error during request processing: {str(e)}", exc_info=True)
             error_event = {"error": {"status": f"An error occurred: {str(e)}"}}
             yield f"data: {json.dumps(error_event)}\n\n"
 

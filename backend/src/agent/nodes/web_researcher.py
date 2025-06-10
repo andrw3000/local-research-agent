@@ -13,10 +13,14 @@ from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_ollama import ChatOllama
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-from agent.state import OverallState, WebSearchState
+from agent.state import ResearchState
 from agent.configuration import Configuration
 from agent.prompts import get_current_date, web_searcher_instructions
 from agent.utils import insert_citation_markers
+from agent.logging_config import setup_logging
+
+# Setup logging
+logger = setup_logging(level="DEBUG", name="agent.web_researcher")
 
 # Enable nested event loops
 nest_asyncio.apply()
@@ -161,43 +165,28 @@ def web_searcher(
         return f"Error while processing web search: {e}"
 
 
-def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
-    """LangGraph node that performs web research using DuckDuckGo or Google Search API.
+def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
+    """Perform web research based on a search query."""
+    logger.info(f"Starting web research for query: {state['current_query']}")
 
-    This function:
-    1. Performs web search using DuckDuckGo
-    2. Processes search results and extracts useful content
-    3. Creates citations with proper formatting
-    4. Returns the results with citations in a standardized format
+    # Get configuration and model
+    cfg = Configuration.from_runnable_config(config)
+    web_search_model = config.get("ollama_llm") or cfg.web_search_model
+    logger.debug(f"Using web search model: {web_search_model}")
 
-    Args:
-        state: Current graph state containing the search query
-        config: Configuration for the runnable
-
-    Returns:
-        Dictionary with state update, including sources_gathered and web_research_result
-    """
-    # Configure
-    configurable = Configuration.from_runnable_config(config)
-    formatted_prompt = web_searcher_instructions.format(
-        current_date=get_current_date(),
-        research_topic=state["search_query"],
-    )
-
-    web_search_model = state.get("ollama_llm") or configurable.web_search_model
-
-    # Custom web search using DuckDuckGo and crawl4ai
+    # Perform web search
     try:
+        logger.debug("Initiating web search")
         response = web_searcher(
-            research_topic=state["search_query"],
+            research_topic=state["current_query"],
             model_name=web_search_model,
             temperature=0.0,
             max_results=5,
             max_context_length=5000,
         )
+        logger.debug("Web search completed successfully")
     except Exception as e:
-        print(f"Error during web search: {e}")
-        # Provide a default response if web search fails
+        logger.error(f"Error during web search: {str(e)}", exc_info=True)
         response = f"Could not retrieve current information about '{state['search_query']}' due to search API limitations."
 
     # Extract text from response if it's an AIMessage
@@ -207,39 +196,40 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         response_text = str(response)
 
     citations = []
+    logger.debug("Processing search results for citations")
 
     try:
-        # Get DuckDuckGo search results for citations with retries
+        # Get DuckDuckGo search results for citations
         tool = DuckDuckGoSearchResults()
         results = []
         max_retries = 3
-        retry_delay = 2  # seconds
+        retry_delay = 2
 
         for attempt in range(max_retries):
             try:
-                results = tool.run(state["search_query"])
+                logger.debug(f"Attempt {attempt + 1} to fetch search results")
+                results = tool.run(state["current_query"])
+                logger.info("Successfully retrieved search results")
                 break
             except Exception as e:
-                if attempt == max_retries - 1:  # Last attempt
-                    print(
-                        f"Failed to get search results after {max_retries} attempts: {e}"
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Failed to get search results after {max_retries} attempts: {str(e)}",
+                        exc_info=True,
                     )
-                    # Continue with empty results
                     break
-                else:
-                    print(
-                        f"Attempt {attempt + 1} failed, retrying in {retry_delay} seconds: {e}"
-                    )
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                logger.warning(
+                    f"Search attempt {attempt + 1} failed, retrying in {retry_delay} seconds: {str(e)}"
+                )
+                time.sleep(retry_delay)
+                retry_delay *= 2
 
-        # Process search results - handle both string and list results
+        # Process search results
+        logger.debug("Processing search results")
         if isinstance(results, str):
             try:
-                # Try to parse as JSON if it's a string
                 search_results = json.loads(results)
             except json.JSONDecodeError:
-                # If not JSON, split into lines and extract URLs
                 lines = results.split("\n")
                 search_results = []
                 for line in lines:
@@ -254,9 +244,8 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
             search_results = results
 
         # Create citations from search results
-        for idx, result in enumerate(search_results[:5]):  # Limit to top 5 results
+        for idx, result in enumerate(search_results[:5]):
             try:
-                # Try to get title and URL - handle different result formats
                 if isinstance(result, dict):
                     title = (
                         result.get("title", "").split(" - ")[0]
@@ -265,7 +254,6 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
                     )
                     url = result.get("href", result.get("link", "No URL"))
                 elif isinstance(result, str):
-                    # Handle case where result is a single string (URL or title)
                     title = (
                         result.split("http")[0].strip() if "http" in result else result
                     )
@@ -275,23 +263,26 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
                         else "No URL"
                     )
                 else:
-                    continue  # Skip if result format is unknown
+                    logger.warning(f"Skipping result with unexpected format: {result}")
+                    continue
 
                 citation = {
-                    "start_index": len(response_text),  # Add citations at the end
+                    "start_index": len(response_text),
                     "end_index": len(response_text),
                     "segments": [
                         {"label": title, "short_url": f"[{idx + 1}]", "value": url}
                     ],
                 }
                 citations.append(citation)
+                logger.debug(f"Added citation: {citation}")
             except Exception as e:
-                print(f"Error processing search result {idx}: {e}")
+                logger.error(
+                    f"Error processing search result {idx}: {str(e)}", exc_info=True
+                )
                 continue
 
     except Exception as e:
-        print(f"Error processing search results: {e}")
-        # Add a placeholder citation if citation processing fails
+        logger.error(f"Error processing search results: {str(e)}", exc_info=True)
         citations = [
             {
                 "start_index": len(response_text),
@@ -306,14 +297,44 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
             }
         ]
 
-    # Add citation markers using the existing utils function
+    # Add citation markers
+    logger.debug("Adding citation markers to response text")
     modified_text = insert_citation_markers(response_text, citations)
 
-    # Extract sources gathered in same format as before
+    # Extract sources gathered
     sources_gathered = [citation["segments"][0] for citation in citations]
+    logger.info(f"Completed web research with {len(sources_gathered)} sources gathered")
 
-    return {
-        "sources_gathered": sources_gathered,
-        "search_query": [state["search_query"]],
-        "web_research_result": [modified_text],
-    }
+    # Get config graph state for state preservation
+    graph_state = config.get("graph_state", {}) if config else {}
+
+    # Initialize lists if they don't exist
+    current_sources = graph_state.get("sources_gathered", [])
+    current_queries = graph_state.get("search_query", [])
+    current_results = graph_state.get("web_research_result", [])
+
+    if not isinstance(current_sources, list):
+        current_sources = []
+    if not isinstance(current_queries, list):
+        current_queries = []
+    if not isinstance(current_results, list):
+        current_results = []
+
+    # Merge current state with graph state
+    return ResearchState(
+        # Research results
+        sources_gathered=current_sources + sources_gathered,
+        search_query=current_queries + [state["current_query"]],
+        web_research_result=current_results + [modified_text],
+        research_loop_count=[],  # Empty list since web_research doesn't increment the counter
+        # Preserve state
+        messages=state.get("messages", []),
+        # Initialize optional fields
+        is_sufficient=None,
+        knowledge_gap=None,
+        follow_up_queries=[],
+        number_of_ran_queries=None,
+        query_list=None,
+        current_query=None,
+        query_id=None,
+    )
