@@ -32,7 +32,7 @@ builder.add_node("finalize_answer", finalize_answer)
 # Set the entrypoint as `generate_query`
 # This means that this node is the first one called
 builder.add_edge(START, "generate_query")
-# Add conditional edge to continue with search queries in a parallel branch
+# Add edges for parallel branches and conditional flow based on research state
 builder.add_conditional_edges(
     "generate_query", continue_to_web_research, ["web_research"]
 )

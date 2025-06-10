@@ -1,8 +1,8 @@
 # mypy: disable - error - code = "no-untyped-def,misc"
 import pathlib
 import time
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, AsyncIterator
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, Request, Response, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,13 +10,32 @@ from fastapi.responses import StreamingResponse
 import fastapi.exceptions
 import asyncio
 import json
-from agent.graph import graph  # Add this import for the LangGraph agent
-from agent.configuration import Configuration  # Import Configuration for graph config
-from agent.state import ResearchState  # Import unified state type
+from langchain_core.messages import HumanMessage, AIMessage
+from agent.graph import graph
+from agent.configuration import Configuration
+from agent.state import ResearchState
 from agent.logging_config import setup_logging
 
 # Setup logging
 logger = setup_logging(level="DEBUG", name="agent.app")
+
+
+class ResearchJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder for research-related types."""
+
+    def default(self, obj):
+        if isinstance(obj, (HumanMessage, AIMessage)):
+            return {
+                "type": obj.__class__.__name__,
+                "content": obj.content,
+                "additional_kwargs": obj.additional_kwargs,
+            }
+        return super().default(obj)
+
+
+def serialize_event(event: Dict[str, Any]) -> str:
+    """Serialize an event to JSON string, handling special types."""
+    return json.dumps(event, cls=ResearchJSONEncoder)
 
 
 # Define request/response models
@@ -28,9 +47,36 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
-    initial_search_query_count: int = 3
-    max_research_loops: int = 3
-    ollama_llm: str = "deepseek-r1"  # Default model
+    initial_search_query_count: int = Field(
+        default=3,
+        ge=1,
+        json_schema_extra={
+            "description": "Number of initial search queries to generate",
+            "title": "Initial Search Query Count",
+        },
+    )
+    max_research_loops: int = Field(
+        default=3,
+        ge=1,
+        json_schema_extra={
+            "description": "Maximum number of research loops to perform",
+            "title": "Max Research Loops",
+        },
+    )
+    ollama_llm: str = Field(
+        default="deepseek-r1",
+        json_schema_extra={
+            "description": "Model to use for research",
+            "title": "LLM Model",
+        },
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "title": "Chat Request",
+            "description": "A request to the research agent to perform research and respond to a chat message",
+        }
+    }
 
 
 # Define the FastAPI app
@@ -39,7 +85,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with your frontend URL
+    allow_origins=["*"],  # In production, replace with frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,15 +98,22 @@ async def chat_stream(request: ChatRequest):
     """Research agent endpoint using LangGraph."""
     try:
         logger.info(f"Received chat request with {len(request.messages)} messages")
-        logger.debug(f"Chat request details: {request.dict()}")
+        logger.debug(f"Chat request details: {request.model_dump()}")
 
         # Create graph input from chat request
         graph_input = ResearchState(
-            messages=request.messages,
-            research_loop_count=[],  # Initialize with empty list
-            search_query=[],  # Initialize with empty list
-            web_research_result=[],  # Initialize with empty list
-            sources_gathered=[],  # Initialize with empty list
+            messages=[
+                (
+                    HumanMessage(content=msg.content)
+                    if msg.role == "user"
+                    else AIMessage(content=msg.content)
+                )
+                for msg in request.messages
+            ],
+            research_loop_count=[],
+            search_query=[],
+            web_research_result=[],
+            sources_gathered=[],
             is_sufficient=None,
             knowledge_gap=None,
             follow_up_queries=[],
@@ -82,44 +135,41 @@ async def chat_stream(request: ChatRequest):
         )
 
         # Run graph with updated config
-        state = graph.invoke(graph_input, {"configurable": config.dict()})
-        logger.info("Research graph execution completed")
+        return StreamingResponse(
+            event_generator(graph_input, config),
+            media_type="text/event-stream",
+        )
+
+    except Exception as e:
+        logger.error(f"Error during request processing: {str(e)}", exc_info=True)
+        error_event = {"error": {"status": f"An error occurred: {str(e)}"}}
+        return StreamingResponse(
+            iter([f"data: {serialize_event(error_event)}\n\n"]),
+            media_type="text/event-stream",
+        )
+
+
+async def event_generator(graph_input: ResearchState, config: Configuration):
+    """Generate events for the streaming response."""
+    try:
+        async for event in graph.astream(
+            graph_input, {"configurable": config.model_dump()}
+        ):
+            logger.debug(f"Graph event: {event}")
+            yield f"data: {serialize_event(event)}\n\n"
 
         # Indicate research completion
         research_complete_event = {
             "research": {"status": "Research completed, generating final response..."}
         }
-        yield f"data: {json.dumps(research_complete_event)}\n\n"
+        yield f"data: {serialize_event(research_complete_event)}\n\n"
 
-        # Get the final response
-        last_message = state["messages"][-1]
-        # Handle LangChain message objects
-        content = (
-            last_message.content
-            if hasattr(last_message, "content")
-            else str(last_message)
-        )
-
-        # Convert messages to list format
-        msg_dicts = [
-            {"role": msg.role, "content": msg.content, "id": msg.id}
-            for msg in request.messages
-        ]
-        response_message = {
-            "role": "ai",
-            "id": f"msg_{int(time.time())}",
-            "content": content,
-        }
-        logger.info("Sending final response to client")
-        logger.debug(f"Final response message: {response_message}")
-        yield f"data: {json.dumps({'data': {'messages': [*msg_dicts, response_message]}})}\n\n"
     except Exception as e:
-        logger.error(f"Error during request processing: {str(e)}", exc_info=True)
-        error_event = {"error": {"status": f"An error occurred: {str(e)}"}}
-        yield f"data: {json.dumps(error_event)}\n\n"
-
-
-from fastapi.responses import StreamingResponse
+        logger.error(f"Error during research process: {str(e)}", exc_info=True)
+        error_event = {
+            "error": {"status": f"An error occurred during research: {str(e)}"}
+        }
+        yield f"data: {serialize_event(error_event)}\n\n"
 
 
 def create_frontend_router(build_dir="../frontend/dist"):

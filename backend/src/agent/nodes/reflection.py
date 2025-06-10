@@ -56,15 +56,15 @@ def reflection(state: ResearchState, config: RunnableConfig) -> ResearchState:
         logger.info(f"Knowledge gap identified: {result.knowledge_gap}")
         logger.debug(f"Follow-up queries: {result.follow_up_queries}")
 
-    # For operator.add, we return a list with 1 if we need more research, empty list otherwise
-    research_loop_increment = [1] if not result.is_sufficient else []
+    research_loop_count = state.get("research_loop_count", [])
+    research_loop_count.extend([1] if not result.is_sufficient else [])
 
     return {
         # Core reflection results
         "is_sufficient": result.is_sufficient,
         "knowledge_gap": result.knowledge_gap,
         "follow_up_queries": result.follow_up_queries,
-        "research_loop_count": research_loop_increment,
+        "research_loop_count": research_loop_count,
         "number_of_ran_queries": len(state.get("search_query", [])),
         # Pass through existing state
         "messages": state.get("messages", []),
@@ -81,8 +81,12 @@ def reflection(state: ResearchState, config: RunnableConfig) -> ResearchState:
 def evaluate_research(
     state: ResearchState,
     config: RunnableConfig,
-) -> ResearchState | Send:
-    """Evaluate whether research should continue or finalize."""
+) -> str:
+    """Evaluate whether research should continue or finalize.
+    
+    Returns:
+        str: The name of the next node to execute ('web_research' or 'finalize_answer')
+    """
     # Get config graph state for state preservation
     current_loop_count = sum(state.get("research_loop_count", []))
     logger.debug(f"Current research loop count: {current_loop_count}")
@@ -90,48 +94,12 @@ def evaluate_research(
     # Check conditions for continuing research
     if (
         not state["is_sufficient"]
-        and state["follow_up_queries"]
+        and state.get("follow_up_queries")
         and current_loop_count
         < config.get("configurable", {}).get("max_research_loops", 3)
     ):
         logger.info("Continuing research with follow-up queries")
-        logger.debug(f"Follow-up queries: {state['follow_up_queries']}")
-        next_state = ResearchState(
-            messages=state.get("messages", []),
-            search_query=state.get("search_query", []),
-            web_research_result=state.get("web_research_result", []),
-            sources_gathered=state.get("sources_gathered", []),
-            research_loop_count=[],  # Reset for next iteration
-            current_query=state["follow_up_queries"][0],
-            query_id=f"followup_{current_loop_count}",
-            # Initialize optional fields
-            is_sufficient=None,
-            knowledge_gap=None,
-            follow_up_queries=[],
-            number_of_ran_queries=None,
-            query_list=None,
-        )
-        return Send("web_research", next_state)
+        return "web_research"
 
     logger.info("Research complete, moving to answer finalization")
-
-    # Construct finalize state with all preserved information
-    finalize_state = ResearchState(
-        # Pass through research results
-        web_research_result=state.get("web_research_result", []),
-        sources_gathered=state.get("sources_gathered", []),
-        search_query=state.get("search_query", []),
-        messages=state.get("messages", []),
-        research_loop_count=[],  # Empty list since we're finalizing
-        number_of_ran_queries=state["number_of_ran_queries"],
-        # Initialize optional fields
-        is_sufficient=None,
-        knowledge_gap=None,
-        follow_up_queries=[],
-        query_list=None,
-        current_query=None,
-        query_id=None,
-    )
-
-    logger.debug(f"Sending state to finalize_answer: {finalize_state}")
-    return Send("finalize_answer", finalize_state)
+    return "finalize_answer"

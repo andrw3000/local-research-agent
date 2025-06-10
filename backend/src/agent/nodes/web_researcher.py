@@ -166,7 +166,20 @@ def web_searcher(
 
 
 def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
-    """Perform web research based on a search query."""
+    """LangGraph node that performs web research for a given query."""
+    if not state.get("current_query"):
+        if state.get("query_list"):
+            # Handle initial queries from query generator
+            state["current_query"] = state["query_list"][0]
+            state["query_id"] = f"query_0"
+            state["query_list"] = state["query_list"][1:]  # Remove used query
+        elif state.get("follow_up_queries"):
+            # Handle follow-up queries from reflection
+            state["current_query"] = state["follow_up_queries"][0]
+            current_loop = len(state.get("research_loop_count", []))
+            state["query_id"] = f"followup_{current_loop}"
+            state["follow_up_queries"] = state["follow_up_queries"][1:]  # Remove used query
+
     logger.info(f"Starting web research for query: {state['current_query']}")
 
     # Get configuration and model
@@ -174,167 +187,34 @@ def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
     web_search_model = cfg.ollama_llm or cfg.web_search_model
     logger.debug(f"Using web search model: {web_search_model}")
 
-    # Perform web search
-    try:
-        logger.debug("Initiating web search")
-        response = web_searcher(
-            research_topic=state["current_query"],
-            model_name=web_search_model,
-            temperature=0.0,
-            max_results=5,
-            max_context_length=5000,
-        )
-        logger.debug("Web search completed successfully")
-    except Exception as e:
-        logger.error(f"Error during web search: {str(e)}", exc_info=True)
-        response = f"Could not retrieve current information about '{state['search_query']}' due to search API limitations."
+    # Ensure we have a query to research
+    if not state["current_query"]:
+        raise ValueError("No query provided for web research")
 
-    # Extract text from response if it's an AIMessage
-    if isinstance(response, AIMessage):
-        response_text = response.content
-    else:
-        response_text = str(response)
+    # Perform web research
+    modified_text, citations = web_searcher(
+        research_topic=state["current_query"],
+        model_name=web_search_model,
+    )
 
-    citations = []
-    logger.debug("Processing search results for citations")
-
-    try:
-        # Get DuckDuckGo search results for citations
-        tool = DuckDuckGoSearchResults()
-        results = []
-        max_retries = 3
-        retry_delay = 2
-
-        for attempt in range(max_retries):
-            try:
-                logger.debug(f"Attempt {attempt + 1} to fetch search results")
-                results = tool.run(state["current_query"])
-                logger.info("Successfully retrieved search results")
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(
-                        f"Failed to get search results after {max_retries} attempts: {str(e)}",
-                        exc_info=True,
-                    )
-                    break
-                logger.warning(
-                    f"Search attempt {attempt + 1} failed, retrying in {retry_delay} seconds: {str(e)}"
-                )
-                time.sleep(retry_delay)
-                retry_delay *= 2
-
-        # Process search results
-        logger.debug("Processing search results")
-        if isinstance(results, str):
-            try:
-                search_results = json.loads(results)
-            except json.JSONDecodeError:
-                lines = results.split("\n")
-                search_results = []
-                for line in lines:
-                    if "http" in line:
-                        search_results.append(
-                            {
-                                "title": line.split(" http")[0].strip(),
-                                "href": "http" + line.split(" http")[1].strip(),
-                            }
-                        )
-        else:
-            search_results = results
-
-        # Create citations from search results
-        for idx, result in enumerate(search_results[:5]):
-            try:
-                if isinstance(result, dict):
-                    title = (
-                        result.get("title", "").split(" - ")[0]
-                        if " - " in result.get("title", "")
-                        else result.get("title", "No Title")
-                    )
-                    url = result.get("href", result.get("link", "No URL"))
-                elif isinstance(result, str):
-                    title = (
-                        result.split("http")[0].strip() if "http" in result else result
-                    )
-                    url = (
-                        "http" + result.split("http")[1].strip()
-                        if "http" in result
-                        else "No URL"
-                    )
-                else:
-                    logger.warning(f"Skipping result with unexpected format: {result}")
-                    continue
-
-                citation = {
-                    "start_index": len(response_text),
-                    "end_index": len(response_text),
-                    "segments": [
-                        {"label": title, "short_url": f"[{idx + 1}]", "value": url}
-                    ],
-                }
-                citations.append(citation)
-                logger.debug(f"Added citation: {citation}")
-            except Exception as e:
-                logger.error(
-                    f"Error processing search result {idx}: {str(e)}", exc_info=True
-                )
-                continue
-
-    except Exception as e:
-        logger.error(f"Error processing search results: {str(e)}", exc_info=True)
-        citations = [
-            {
-                "start_index": len(response_text),
-                "end_index": len(response_text),
-                "segments": [
-                    {
-                        "label": "Search Error",
-                        "short_url": "[!]",
-                        "value": "Search results unavailable",
-                    }
-                ],
-            }
-        ]
-
-    # Add citation markers
-    logger.debug("Adding citation markers to response text")
-    modified_text = insert_citation_markers(response_text, citations)
-
-    # Extract sources gathered
+    # Extract sources and prepare return state
     sources_gathered = [citation["segments"][0] for citation in citations]
     logger.info(f"Completed web research with {len(sources_gathered)} sources gathered")
 
-    # Get config graph state for state preservation
-    graph_state = config.get("graph_state", {}) if config else {}
-
-    # Initialize lists if they don't exist
-    current_sources = graph_state.get("sources_gathered", [])
-    current_queries = graph_state.get("search_query", [])
-    current_results = graph_state.get("web_research_result", [])
-
-    if not isinstance(current_sources, list):
-        current_sources = []
-    if not isinstance(current_queries, list):
-        current_queries = []
-    if not isinstance(current_results, list):
-        current_results = []
-
-    # Merge current state with graph state
+    # Merge current research with existing state
     return {
         # Research results
-        "sources_gathered": current_sources + sources_gathered,
-        "search_query": current_queries + [state["current_query"]],
-        "web_research_result": current_results + [modified_text],
-        "research_loop_count": [],  # Empty list since web_research doesn't increment the counter
-        # Preserve state
+        "sources_gathered": (state.get("sources_gathered", []) + sources_gathered),
+        "search_query": (state.get("search_query", []) + [state["current_query"]]),
+        "web_research_result": (state.get("web_research_result", []) + [modified_text]),
+        "research_loop_count": state.get("research_loop_count", []),
+        # Preserve other state
         "messages": state.get("messages", []),
-        # Initialize optional fields
-        "is_sufficient": None,
-        "knowledge_gap": None,
-        "follow_up_queries": [],
-        "number_of_ran_queries": None,
-        "query_list": None,
-        "current_query": None,
-        "query_id": None,
+        "is_sufficient": state.get("is_sufficient"),
+        "knowledge_gap": state.get("knowledge_gap"),
+        "follow_up_queries": state.get("follow_up_queries", []),
+        "number_of_ran_queries": len(state.get("search_query", [])) + 1,
+        "query_list": state.get("query_list"),
+        "current_query": None,  # Clear current query as it's been processed
+        "query_id": None,  # Clear query ID as it's been processed
     }

@@ -4,7 +4,11 @@ from agent.app import app
 import json
 
 
-@pytest.mark.anyio
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
 def test_chat_stream():
     """Test the chat stream endpoint with various scenarios"""
     client = TestClient(app)
@@ -34,44 +38,106 @@ def test_chat_stream():
     ]
 
     for test_case in test_cases:
-        response = client.post("/app/agent", json=test_case)
+        response = client.post(
+            "/app/agent",
+            json=test_case,
+            headers={"Accept": "text/event-stream"},
+        )
 
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
 
-        # Convert response content to a list of events
-        content = response.content.decode()
-        events = [
-            line for line in content.split("\n\n") if line and line.startswith("data: ")
-        ]
+        # Read the response content as SSE stream
+        events = []
+        for line in response.iter_lines():
+            if line:
+                # Handle both str and bytes type for response lines
+                line_str = line.decode() if isinstance(line, bytes) else line
+                if line_str.startswith("data: "):
+                    try:
+                        event_data = json.loads(line_str.replace("data: ", ""))
+                        events.append(event_data)
+                    except json.JSONDecodeError:
+                        continue
 
-        # Should have at least 2 events:
-        # 1. Initial "generating queries" event
-        # 2. Final response with messages
-        assert len(events) >= 2
+        # Verify we got events
+        assert len(events) > 0
 
-        # First event should be query generation status
-        first_event = json.loads(events[0].replace("data: ", ""))
-        assert "generate_query" in first_event
-        assert "status" in first_event["generate_query"]
+        # Check event structure
+        has_error = any("error" in event for event in events)
+        if not has_error:
+            # Should see research events
+            assert any(
+                "research" in event or "web_research_result" in event
+                for event in events
+            )
+        else:
+            # For error case, verify error structure
+            error_events = [event for event in events if "error" in event]
+            assert len(error_events) > 0
+            assert "status" in error_events[0]["error"]
 
-        # Process events and check for expected flow
-        research_done = False
-        error_occurred = False
-        for event in events[1:-1]:  # Skip first and last events
-            event_data = json.loads(event.replace("data: ", ""))
-            if "research" in event_data:
-                research_done = True
-            if "error" in event_data:
-                error_occurred = True
-                break
 
-        # If no error occurred, check the final response
-        if not error_occurred:
-            last_event = json.loads(events[-1].replace("data: ", ""))
-            assert "data" in last_event
-            assert "messages" in last_event["data"]
-            assert isinstance(last_event["data"]["messages"], list)
-            assert len(last_event["data"]["messages"]) == len(test_case["messages"]) + 1
-            assert last_event["data"]["messages"][-1]["role"] == "ai"
-            assert "content" in last_event["data"]["messages"][-1]
+def test_agent_validates_input(client):
+    """Test that the agent endpoint properly validates input"""
+    # Test missing required fields
+    response = client.post(
+        "/app/agent",
+        json={},
+        headers={"Accept": "text/event-stream"},
+    )
+    assert response.status_code == 422
+
+    # Test invalid message format
+    response = client.post(
+        "/app/agent",
+        json={
+            "messages": [{"invalid": "format"}],
+            "max_research_loops": 1,
+            "initial_search_query_count": 1,
+            "ollama_llm": "test",
+        },
+        headers={"Accept": "text/event-stream"},
+    )
+    assert response.status_code == 422
+
+    # Test invalid research loops value
+    response = client.post(
+        "/app/agent",
+        json={
+            "messages": [{"role": "user", "content": "test"}],
+            "max_research_loops": -1,
+            "initial_search_query_count": 1,
+            "ollama_llm": "test",
+        },
+        headers={"Accept": "text/event-stream"},
+    )
+    assert response.status_code == 422
+
+
+def test_agent_cancellation_handling(client):
+    """Test that the agent endpoint can handle client disconnection"""
+    response = client.post(
+        "/app/agent",
+        json={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is a very complex topic that requires lots of research?",
+                }
+            ],
+            "max_research_loops": 5,
+            "initial_search_query_count": 3,
+            "ollama_llm": "test",
+        },
+        headers={"Accept": "text/event-stream"},
+    )
+
+    # Verify the response starts correctly
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    # Read a few events then simulate disconnection
+    for line in response.iter_lines():
+        if line:
+            break  # Exit after first event

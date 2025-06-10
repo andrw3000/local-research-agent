@@ -8,7 +8,7 @@ def test_graph_invoke():
     # Run graph with test input
     state = graph.invoke(
         ResearchState(
-            messages=[HumanMessage(content="Who won the euro 2024")],
+            messages=[HumanMessage(content="Who won the euro 2024?")],
             research_loop_count=[],
             search_query=[],
             web_research_result=[],
