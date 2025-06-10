@@ -1,17 +1,26 @@
-import pytest
 from agent import graph
-from agent.state import OverallState
+from agent.state import ResearchState
+from langchain_core.messages import HumanMessage
 
 
 def test_graph_invoke():
     """Test basic graph invocation with a simple question"""
     # Run graph with test input
     state = graph.invoke(
-        {
-            "messages": [{"role": "user", "content": "Who won the euro 2024"}],
-            "max_research_loops": 3,
-            "initial_search_query_count": 3,
-        }
+        ResearchState(
+            messages=[HumanMessage(content="Who won the euro 2024")],
+            research_loop_count=[],
+            search_query=[],
+            web_research_result=[],
+            sources_gathered=[],
+            is_sufficient=None,
+            knowledge_gap=None,
+            follow_up_queries=[],
+            number_of_ran_queries=None,
+            query_list=None,
+            current_query=None,
+            query_id=None,
+        )
     )
 
     # Verify the response structure
