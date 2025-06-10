@@ -90,7 +90,7 @@ def continue_to_web_research(state: ResearchState):
             web_research_result=state.get("web_research_result", []),
             sources_gathered=state.get("sources_gathered", []),
             research_loop_count=state.get("research_loop_count", []),
-            current_query=query.get("query"),
+            current_query=query,  # Changed: query is now used directly as it's a string
             query_id=query_id,
             # Initialize optional fields
             is_sufficient=None,
