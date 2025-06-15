@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypedDict, List, Any
+from typing import TypedDict, List, Any, Optional
+from typing_extensions import Annotated, NotRequired
 
 from langgraph.graph import add_messages
-from typing_extensions import Annotated
+from langchain_core.messages import BaseMessage
 
 import operator
 from dataclasses import dataclass, field
@@ -18,24 +19,24 @@ class Query(TypedDict):
 
 class ResearchState(TypedDict):
     # Core research data
-    messages: Annotated[list, add_messages]
-    search_query: Annotated[list, operator.add]
-    web_research_result: Annotated[list, operator.add]
-    sources_gathered: Annotated[list, operator.add]
-    research_loop_count: Annotated[List[int], operator.add]
+    messages: List[BaseMessage]
+    research_loop_count: List[int]
+    search_query: List[str]
+    web_research_result: List[str]
+    sources_gathered: List[str]
 
     # Reflection data (optional)
-    is_sufficient: bool | None
-    knowledge_gap: str | None
-    follow_up_queries: Annotated[list, operator.add]
-    number_of_ran_queries: int | None
+    is_sufficient: Optional[bool]  # No annotation needed, we handle concurrency in the graph
+    knowledge_gap: Optional[str]
+    follow_up_queries: List[str]
+    number_of_ran_queries: NotRequired[Optional[int]]
 
     # Query data (optional)
-    query_list: list[Query] | None
+    query_list: NotRequired[Optional[List[str]]]
 
     # Web search data (optional)
-    current_query: str | None
-    query_id: str | None
+    current_query: NotRequired[Optional[str]]
+    query_id: NotRequired[Optional[str]]
 
 
 @dataclass(kw_only=True)

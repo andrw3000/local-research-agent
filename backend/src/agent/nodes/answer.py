@@ -23,7 +23,7 @@ def finalize_answer(state: ResearchState, config: RunnableConfig) -> ResearchSta
         state: Current graph state containing the running summary and sources gathered
 
     Returns:
-        Dictionary with state update, including running_summary key containing the formatted final summary with sources
+        Dictionary with state update, including messages with the final answer and sources.
     """
     logger.info("Starting answer finalization")
 
@@ -42,7 +42,7 @@ def finalize_answer(state: ResearchState, config: RunnableConfig) -> ResearchSta
     if not state.get("web_research_result"):
         logger.error("No web research results found in state!")
         return {
-            "messages": [
+            "messages": state["messages"] + [
                 AIMessage(
                     content="Error: No research results available to generate answer"
                 )
@@ -70,21 +70,13 @@ def finalize_answer(state: ResearchState, config: RunnableConfig) -> ResearchSta
     result = llm.invoke(formatted_prompt)
     logger.info("Final answer generated")
 
-    # Replace the short urls with the original urls
+    # Deduplicate sources and keep only those that contributed to the final answer
     logger.debug("Processing source citations")
-    unique_sources = []
-    for source in state["sources_gathered"]:
-        if source["short_url"] in result.content:
-            logger.debug(f"Replacing citation {source['short_url']} with full URL")
-            result.content = result.content.replace(
-                source["short_url"], source["value"]
-            )
-            unique_sources.append(source)
-
+    unique_sources = list(set(state["sources_gathered"]))
     logger.info(f"Answer finalized with {len(unique_sources)} unique sources")
 
     return {
-        "messages": [AIMessage(content=result.content)],
+        "messages": state["messages"] + [AIMessage(content=result.content)],
         "sources_gathered": unique_sources,
         "research_loop_count": [],  # Empty list since answer node doesn't increment the counter
         # Pass through required fields with empty/None values since this is the final state

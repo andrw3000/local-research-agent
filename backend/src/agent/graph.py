@@ -1,5 +1,5 @@
 import os
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, List, Union
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from agent.configuration import Configuration
@@ -14,13 +14,18 @@ from agent.nodes import (
 from agent.state import ResearchState
 
 
+# In concurrent LangGraph, we need to define the types of update operations that can happen
+class UpdateType(TypedDict):
+    is_sufficient: bool
+
+
 load_dotenv()
 
 if os.getenv("OLLAMA_URL") is None:
     raise ValueError("The `OLLAMA_URL` environment variable is not set")
 
 
-# Create our Agent Graph
+# Create our Agent Graph with the proper state typing
 builder = StateGraph(ResearchState, config_schema=Configuration)
 
 # Define the nodes we will cycle between

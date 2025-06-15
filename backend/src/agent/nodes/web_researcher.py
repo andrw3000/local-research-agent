@@ -44,6 +44,7 @@ def web_searcher(
     max_context_length: int = 3000,
 ):
     context = ""
+    citations = []
 
     try:
         # Perform DuckDuckGo search with retries
@@ -155,14 +156,17 @@ def web_searcher(
             # Get response from the model
             try:
                 response = llm.invoke(messages)
-                return response.content if response else "No response generated"
+                text = response.content if response else "No response generated"
+                # Process citations from the context
+                citations = [{"segments": [url]} for url in urls if url]
+                return text, citations
             except Exception as e:
                 print(f"Error from LLM: {e}")
-                return f"Error while processing request: {e}"
+                return f"Error while processing request: {e}", []
 
     except Exception as e:
         print(f"Error in web_searcher: {e}")
-        return f"Error while processing web search: {e}"
+        return f"Error while processing web search: {e}", []
 
 
 def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
@@ -178,7 +182,9 @@ def web_research(state: ResearchState, config: RunnableConfig) -> ResearchState:
             state["current_query"] = state["follow_up_queries"][0]
             current_loop = len(state.get("research_loop_count", []))
             state["query_id"] = f"followup_{current_loop}"
-            state["follow_up_queries"] = state["follow_up_queries"][1:]  # Remove used query
+            state["follow_up_queries"] = state["follow_up_queries"][
+                1:
+            ]  # Remove used query
 
     logger.info(f"Starting web research for query: {state['current_query']}")
 

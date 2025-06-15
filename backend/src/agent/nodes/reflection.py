@@ -59,6 +59,7 @@ def reflection(state: ResearchState, config: RunnableConfig) -> ResearchState:
     research_loop_count = state.get("research_loop_count", [])
     research_loop_count.extend([1] if not result.is_sufficient else [])
 
+    # When we have concurrent operations, we need to ensure we return exactly one value per key
     return {
         # Core reflection results
         "is_sufficient": result.is_sufficient,
@@ -83,7 +84,7 @@ def evaluate_research(
     config: RunnableConfig,
 ) -> str:
     """Evaluate whether research should continue or finalize.
-    
+
     Returns:
         str: The name of the next node to execute ('web_research' or 'finalize_answer')
     """
